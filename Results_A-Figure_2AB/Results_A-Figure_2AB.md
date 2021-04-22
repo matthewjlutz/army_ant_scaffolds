@@ -1,4 +1,4 @@
-Results\_A\_Figure\_2\_HTML
+Results\_A\_Figure\_2AB
 ================
 
 # Setup
