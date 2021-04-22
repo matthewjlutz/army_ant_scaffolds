@@ -25,20 +25,14 @@ p_load(readr, dplyr, broom, ggplot2, GGally, lme4, sjPlot, viridis)
 
 ```{r, message=FALSE, warning=FALSE}
 
-#df <- read.csv("https://raw.githubusercontent.com/loss-function/army_ant_scaffolding/master/Data/Growth_Data_All_Angles_FINAL_COUNTS_SCALED.csv")
-
-#df_final <- read.csv("https://raw.githubusercontent.com/loss-function/army_ant_scaffolding/master/Data/Data_Final_Analysis_3_10_2020.csv", header=TRUE, na.strings=c("","NA"))
-
 ### This is the datasheet used for the growth curves, with scaffold size over time as measured by the Matlab script.
-### Scaling factors 
-#df <- read_csv("Data/Growth_Data_All_Angles_FINAL_COUNTS_SCALED.csv")
 
 df <- read_csv("Data/Growth_Data_All_Angles_REVISIONS_FIG_2.csv")
 
-### This is the main datasheet, here used just for the boxplot in Fig. 2b.
-#df_final <- read.csv("Data/Data_Final_Analysis_4_19_20.csv", header=TRUE, na.strings=c("","NA"))
-df_final <- read.csv("Data/Main_DataSheet_Scaffolding_PNAS_2020_FINAL2.csv", header=TRUE, na.strings=c("","NA"))
 
+### This is the main datasheet, here used just for the boxplot in Fig. 2b.
+
+df_final <- read.csv("Data/Main_DataSheet_Scaffolding_PNAS_2020_FINAL2.csv", header=TRUE, na.strings=c("","NA"))
 
 
 df <- df %>%
