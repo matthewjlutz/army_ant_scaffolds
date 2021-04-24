@@ -1,6 +1,6 @@
 # army_ant_scaffolds
 
-This repository contains code and datasheets used for analyses in the paper:
+This repository contains code (R and Matlab) and datasheets used for analyses in the paper:
 
 Individual error correction drives responsive self-assembly of army ant scaffolds (PNAS, 2021) 
 
