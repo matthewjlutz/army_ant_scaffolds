@@ -1,0 +1,158 @@
+---
+title: "Results: Effects of scaffolds on foraging traffic"
+output:
+  html_notebook:
+    fig_caption: yes
+    number_sections: yes
+    toc: yes
+---
+
+---
+
+This R notebook includes all code used for analysis in the Results section "Effects of scaffolds on foraging traffic." This includes the second mixed-effects model, the paired boxplot in Figure 3 (comparing the proportion of ants slipping and/or falling at the start and end of each experiment), and the SI Appendix Figures S3, S4, and S5.
+
+# . Setup
+
+```{r, message=FALSE, warning=FALSE}
+if (!require(pacman)) {
+  install.packages("pacman")
+  require(pacman)
+}
+
+p_load(readr, dplyr, tidyr, broom, ggplot2, GGally, glmmTMB, MuMIn, sjPlot, viridis, DHARMa)
+```
+
+[Back to top]("#")
+
+---
+
+# . Data loading
+
+```{r, message=FALSE, warning=FALSE}
+dat <- read_csv("Data/Main_DataSheet_Scaffolding_PNAS_Resubmission_FINAL.csv") %>%
+  select(., Date, Angle, Start_Traffic, End_Traffic, Prey, Bidirection, SlipFalls_Start, SlipFalls_End) %>%
+  mutate(Start = (SlipFalls_Start / 120) / Start_Traffic,
+         End = (SlipFalls_End / 120) / End_Traffic) %>%
+  pivot_longer(., cols = c("Start", "End"), names_to = "Time", values_to = "SlipFalls_Prop") %>%
+  mutate(., Time = factor(Time, levels = c("Start", "End")),
+         W = Start_Traffic * 120)
+
+dat
+```
+
+[Back to top]("#")
+
+---
+
+# . Slipping comparisons
+
+## . Figure 3: Paired boxplot for all angles
+
+Estimating effects of scaffold formation on traffic at each angle. Comparing the proportion of ants slipping/falling at experiment start (first 2 minutes, shown in dark green) and end (final 2 minutes, shown in light green), representing the absence or presence of scaffold structures, respectively.
+
+```{r message=FALSE}
+ggplot(dat, aes(x = factor(Angle), y = SlipFalls_Prop, color = Time, fill = Time))  + 
+  scale_color_viridis(discrete = TRUE, direction = 1, begin = .3, end = .7) +
+  scale_fill_viridis(discrete = TRUE, direction = 1, begin = .59, end = .96) +
+  geom_point(pch = 20, alpha = .8, position = position_jitterdodge(dodge.width = .7)) +
+  geom_boxplot(width = .69, alpha = 0.58, outlier.shape = NA, position = position_dodge(width = 0.8)) +
+  theme_bw(base_size = 18) +
+  #ylim(0, 0.06) +
+  theme(aspect.ratio = .66, axis.text = element_text(size = 12), legend.position = c(0, 1),
+        legend.justification = c(-0.1, 1.1), legend.title = element_blank(),
+        #panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        axis.title = element_text(size = 12, face = "bold"),
+        plot.title = element_text(size = 12, face = "bold", hjust = 0.5)) +
+  xlab("\nSurface angle") + ylab("Proportion of ants \n slipping and/or falling")
+ #ggsave("Figure3_FINAL_Resubmission2.pdf")
+ 
+
+```
+
+[Back to top]("#")
+
+---
+
+# . Data modeling
+
+## . Collinearity
+
+```{r message=FALSE}
+ggpairs(data = dat, columns = c(2, 4)) +
+  theme_light()
+```
+
+### . Generalized mixed-effects model with gaussian family
+
+**Model fit**
+
+```{r}
+m_full <- glmmTMB(SlipFalls_Prop ~ Time * Angle + (1 | Date), 
+                  data = dat, family = binomial, weights = dat$W,
+                  na.action = na.fail)
+m1 <- get.models(dredge(m_full, rank = "BIC"), 1)[[1]]
+m1
+summary(m1)
+get_model_data(m1)
+
+
+```
+
+**Model diagnostics**
+
+```{r fig.width=2, fig.height=2}
+plot_model(m1, type = "diag", terms = "Date")$Date +
+  theme_light(base_size = 12)
+```
+
+**Model interpretation**
+
+```{r}
+summary(m1)
+plot_model(m1)
+```
+
+```{r}
+re <- plot_model(m1, type = "re") +
+  geom_hline(yintercept = 1, linetype = 2) +
+  labs(y = "Relative estimates") +
+  theme_light(base_size = 12)
+```
+
+```{r}
+std <- plot_model(m1, type = "std") +
+  geom_hline(yintercept = 1, linetype = 2) +
+  labs(title = "Standardized effects") +
+  theme_light(base_size = 12)
+```
+
+```{r fig.width=4, fig.height=2}
+std + re
+```
+
+
+```{r}
+plot_model(m1, type = "eff", terms = "Angle") +
+  ylim(0, NA) +
+  labs(y = "Proportion of ants \n slipping and/or falling", title = "Predicted proportion") +
+  theme_light(base_size = 16)
+```
+
+```{r}
+plot_model(m1, type = "eff", terms = "Time", show.data = FALSE) +
+  ylim(0, NA) +
+  labs(y = "Proportion of ants \n slipping and/or falling", title = "Predicted proportion") +
+  theme_light(base_size = 16)
+```
+
+```{r fig.width=2, fig.height=2}
+plot_model(m1, type = "eff", terms = c("Angle", "Time"), show.data = TRUE) +
+  ylim(0, NA) +
+  labs(y = "Proportion of ants \n slipping and/or falling", title = "Predicted proportion") +
+  theme_light(base_size = 12) +
+  theme(legend.position = c(0, 1),
+        legend.justification = c(-0.02, 1.02),
+        legend.background = element_blank())
+```
+
