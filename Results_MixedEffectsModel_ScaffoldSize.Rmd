@@ -1,0 +1,265 @@
+---
+title: "Mixed-effects model: Dynamics of Scaffold Growth"
+output:
+  html_notebook: 
+    fig_caption: yes
+    number_sections: yes
+    toc: yes
+---
+
+---
+
+This notebook includes all analyses and plots related to the mixed-effects model described in Results section "Dynamics of Scaffold Growth."
+
+# . Setup
+
+```{r, message=FALSE, warning=FALSE}
+if (!require(pacman)) {
+  install.packages("pacman")
+  require(pacman)
+}
+
+p_load(readr, dplyr, ggplot2, GGally, glmmTMB, sjPlot, DHARMa, MuMIn, patchwork,
+       quantreg, effects)
+```
+
+[Back to top]("#")
+
+---
+
+# . Data loading
+
+```{r, message=FALSE, warning=FALSE}
+dat <- read_csv("Data/Main_DataSheet_Scaffolding_PNAS_Resubmission_FINAL.csv") %>%
+  mutate(Bidirection = Bidirection / 0.5,
+         Date = as.factor(Date))
+dat
+```
+
+[Back to top]("#")
+
+---
+
+# . Exploratory Plots (not included in paper)
+
+## . Scaffold size
+
+### . vs angle
+
+```{r message=FALSE}
+ggplot(dat, aes(x = Angle, y = A)) +
+  geom_point() + 
+  geom_smooth(se = FALSE) + 
+  labs(x = "Angle (degree)",
+       y = "Ants in scaffold") +
+  theme_light(base_size = 16)
+```
+
+### . vs traffic
+
+```{r message=FALSE}
+ggplot(dat, aes(x = Traffic_Mean, y = A, color = factor(Angle))) +
+  geom_point() + 
+  geom_smooth(method = lm, se = FALSE) + 
+  labs(x = "Traffic (ants / sec)",
+       y = "Number of ants",
+       color = "Angle") +
+  theme_light(base_size = 16)
+```
+
+### . vs prey transport
+
+```{r message=FALSE}
+ggplot(dat, aes(x = Prey, y = A, color = factor(Angle))) +
+  geom_point() + 
+  geom_smooth(method = lm, se = FALSE) + 
+  labs(x = "Rate of prey transport (prey-laden ants / sec)",
+       y = "Number of ants",
+       color = "Angle") +
+  theme_light(base_size = 16)
+```
+
+### . vs traffic bidirectionality
+
+```{r message=FALSE}
+ggplot(dat, aes(x = Bidirection, y = A, color = factor(Angle))) +
+  geom_point() + 
+  geom_smooth(method = lm, se = FALSE) + 
+  labs(x = "Traffic bidirectionality (0 = unidirectional; 1 = bidirectional)",
+       y = "Number of ants",
+       color = "Angle") +
+  theme_light(base_size = 16)
+```
+
+[Back to top]("#")
+
+---
+
+# . Data modeling
+
+## . Scaffold size 
+
+### . Collinearity
+
+```{r message=FALSE}
+ggpairs(data = dat, columns = c(3, 7, 8, 10)) +
+  theme_light()
+```
+
+Since the analysis above revealed a strong correlation between traffic and bidirectionality, of these two, only traffic was used for the rest of the analysis. 
+
+[Back to top]("#")
+
+---
+
+### . Generalized mixed-effects model with negative binomial family
+
+#### . Model fit
+
+```{r}
+m_full <- glmmTMB(A ~ log(Angle) * Prey * Traffic_Mean + (1 | Date), data = dat, 
+        family = nbinom1)
+m_rank <- dredge(m_full, rank = "BIC")
+m1 <- get.models(dredge(m_full, rank = "BIC"), 1)[[1]]
+
+m_rank
+m1
+
+# warnings may appear here, which are harmless but indicate glmmTMB should be updated
+```
+[Back to top]("#")
+
+---
+
+#### . Model diagnostics
+
+```{r}
+sim <- simulateResiduals(m1, n = 1000, use.u = TRUE)
+sim_dat <- tibble(scaled_resid = sim$scaledResiduals,
+                  pred = sim$fittedPredictedResponse)
+```
+
+```{r}
+# testUniformity() - tests if the overall distribution conforms to expectations
+# testOutliers() - tests if there are more simulation outliers than expected
+# testDispersion() - tests if the simulated dispersion is equal to the observed dispersion
+
+unif <- testUniformity(sim, plot = FALSE)
+disp <- testDispersion(sim, plot = FALSE)
+out <- testOutliers(sim, plot = FALSE)
+
+qq <- ggplot(sim_dat, aes(sample = scaled_resid)) +
+  stat_qq(distribution = stats::qunif, alpha = 0.5) +
+  stat_qq_line(distribution = stats::qunif, linetype = 2) +
+  annotate("text", x = 1, y = 0, hjust = 1, vjust = -0.1,
+           label = paste0("KS test: p=", format(unif$p.value, digits = 4), "\n",
+                          "Dispersion test: p=", format(disp$p.value, digits = 4), "\n",
+                          "Outlier test: p=", format(out$p.value, digits = 4))) +
+  labs(title = "Residuals QQ plot", x = "Expected", y = "Observed") + 
+  theme_light(base_size = 16)
+```
+
+```{r}
+# fits a quantile regression or residuals against a predictor (default predicted value), and tests if this conforms to the expected quantile
+quant <- testQuantiles(sim, plot = FALSE)
+
+qt <- ggplot(sim_dat, aes(x = pred, y = scaled_resid)) +
+  geom_point() +
+  stat_quantile(size = 1, formula = y ~ x) + 
+  geom_hline(yintercept = c(0.25, 0.5, 0.75), linetype = 2) + 
+  annotate("text", x = max(sim_dat$pred), y = 1, hjust = 1, vjust = 1,
+           label = paste0("Quantile test: p=", format(quant$p.value, digits = 4))) +
+  labs(title = "Residuals vs Predicted", x = "Predicted values", y = "Standardized residuals") + 
+  theme_light(base_size = 12)
+```
+
+```{r}
+# tests if there are more zeros than expected
+zero <- testZeroInflation(sim, plot = FALSE)
+
+zero_obs <- sum(sim$observedResponse == 0)
+zero_sim <- tibble(zeros = apply(sim$simulatedResponse, 2, function(x) sum(x == 0)))
+
+z <- ggplot(zero_sim, aes(x = zeros)) +
+  geom_bar(stat = "count", alpha = 0.5) +
+  geom_vline(xintercept = zero_obs, color = "red", linetype = 2, size = 1) +
+  annotate("text", x = max(zero_sim$zeros), y = 150, hjust = 1, vjust = 1,
+           label = paste0("Zero inflation test: p=", format(zero$p.value, digits = 4))) +
+  labs(title = "Zero inflation", x = "Number of zeros in simulated values", y = "Frequency") + 
+  theme_light(base_size = 12)
+```
+[Back to top]("#")
+
+---
+
+# . Final Plots
+
+## . SI Appendix - Figure S1
+
+```{r fig.width=4, fig.height=4}
+qq / (qt | z)
+#ggsave("Mixed_Effects_Model_A_Diagnostics.pdf")
+
+```
+
+**Model interpretation**
+
+```{r}
+summary(m1)
+```
+
+```{r}
+re <- plot_model(m1, type = "re") +
+  geom_hline(yintercept = 1, linetype = 2) +
+  labs(y = "Relative estimates") +
+  theme_light(base_size = 12) +
+  theme(aspect.ratio = 2)
+```
+
+```{r}
+std <- plot_model(m1, type = "std", show.values = TRUE, value.offset = .3) +
+  geom_hline(yintercept = 1, linetype = 2) +
+  labs(title = "Standardized effects") +
+  theme_light(base_size = 12) +
+  theme(aspect.ratio = 1.1)
+```
+[Back to top]("#")
+
+---
+
+## . Main Text Figure 2C
+
+```{r fig.width=4, fig.height=2}
+std + re
+```
+
+```{r}
+a <- plot_model(m1, type = "eff", terms = "Angle") +
+  labs(y = "Ants in scaffold", title = "Predicted counts") +
+  theme_light(base_size = 12)
+```
+
+```{r}
+b <- plot_model(m1, type = "eff", terms = "Prey") +
+  labs(y = "Ants in scaffold", title = "Predicted counts") +
+  theme_light(base_size = 12) 
+```
+
+```{r}
+c <- plot_model(m1, type = "pred", 
+                terms = c("Angle", "Prey [0.0000, 0.0900, 0.1580, 0.2600, 0.5450]")) +
+  labs(y = "Ants in scaffold", title = "Predicted counts") +
+  theme_light(base_size = 12) +
+  theme(legend.position = c(0, 1),
+        legend.justification = c(-0.02, 1.02),
+        legend.background = element_blank())
+```
+[Back to top]("#")
+
+---
+
+## . SI Appendix Figure S2
+
+```{r, fig.width=4, fig.height=4}
+(a | b) / c 
+```
